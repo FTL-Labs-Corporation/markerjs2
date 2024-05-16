@@ -21,7 +21,7 @@ export class GridMarker extends MarkerBase {
     public uuid: string;
     protected cellValues: string[][];
     public visual: SVGGElement;
-    protected vertices: (SVGCircleElement)[][];
+    protected handles: (SVGCircleElement)[][];
     protected linesVertical: (SVGLineElement)[][];
     protected linesHorizontal: (SVGLineElement)[][];
     protected texts: SVGTextElement[][];
@@ -31,7 +31,7 @@ export class GridMarker extends MarkerBase {
     protected strokeWidth: number;
     protected strokeDasharray: string;
 
-    constructor(container: SVGGElement, overlayContainer: HTMLDivElement, settings: Settings, uuid: string, cellValues: Array<Array<string>>) {
+    constructor(container: SVGGElement, overlayContainer: HTMLDivElement, settings: Settings, uuid: string, cellValues: Array<Array<string>>, vertices: Array<Array<Vector2 | null>>) {
         super(container, overlayContainer, settings);
         this.visual = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         this.gridSize = new Vector2(cellValues.length, cellValues[0].length);  // Adjustable grid size
@@ -39,54 +39,72 @@ export class GridMarker extends MarkerBase {
         this.strokeColor = settings.defaultColor;
         this.strokeWidth = settings.defaultStrokeWidth;
         this.strokeDasharray = settings.defaultStrokeDasharray;
-        this.vertices = new Array<Array<SVGCircleElement>>;
+        this.handles = new Array<Array<SVGCircleElement>>;
         this.linesVertical = new Array<Array<SVGLineElement>>;
         this.linesHorizontal = new Array<Array<SVGLineElement>>;
         this.texts = new Array<Array<SVGTextElement>>;
         this.cellValues = cellValues;
         this.uuid = uuid;
-
         this.texts = [];
         this.container.appendChild(this.visual);
-        this.createGrid();
+        if (vertices === null) {
+            this.createDefaultHandles();
+        }
+        else    {
+            this.createHandlesFromVertices(vertices);
+        }
     }
-    private createGrid(): void {
-
+    private createDefaultHandles()   {
         for (let x = 0; x < this.gridSize.x + 1; x++) {
-            this.vertices.push(new Array<SVGCircleElement>);
+            this.handles.push(new Array<SVGCircleElement>);
             for (let y = 0; y < this.gridSize.y + 1; y++) {
-                this.vertices[x].push(this.createVertex(x * this.cellSize.x, y * this.cellSize.y, false));
+                this.handles[x].push(this.createVertex(x * this.cellSize.x, y * this.cellSize.y, false));
             }
         }
+    }
+    private createHandlesFromVertices(vertices: Array<Array<Vector2>>)   {
+        if (vertices.length !== this.gridSize.x + 1 && vertices[0].length !== this.gridSize.y + 1 ) {
+            for (let x = 0; x < this.gridSize.x + 1; x++) {
+                this.handles.push(new Array<SVGCircleElement>);
+                for (let y = 0; y < this.gridSize.y + 1; y++) {
+                    this.handles[x].push(this.createVertex(vertices[x][y].x, vertices[x][y].y, false));
+                }
+            }
+            this.createGrid();
+        }
+        else {
+            this.createDefaultHandles();
+        }
+    }
+    private createGrid(): void {
         for (let x = 0; x < this.gridSize.x + 1; x++) {
             this.linesVertical.push(new Array<SVGLineElement>);
             for (let y = 0; y < this.gridSize.y; y++) {
-                    this.linesVertical[x].push(this.createLine(this.vertices[x][y]!, this.vertices[x][y + 1]!));
+                    this.linesVertical[x].push(this.createLine(this.handles[x][y]!, this.handles[x][y + 1]!));
             }
         }
         for (let x = 0; x < this.gridSize.x; x++) {
             this.linesHorizontal.push(new Array<SVGLineElement>);
             for (let y = 0; y < this.gridSize.y + 1; y++) {
-                    this.linesHorizontal[x].push(this.createLine(this.vertices[x][y]!, this.vertices[x + 1][y]!));
+                    this.linesHorizontal[x].push(this.createLine(this.handles[x][y]!, this.handles[x + 1][y]!));
             }
         }
         // Append all vertices. Must be on top!!!!
         for (let x = 0; x < this.gridSize.x + 1; x++) {
             for (let y = 0; y < this.gridSize.y + 1; y++) {
-                this.visual.appendChild(this.vertices[x][y]!);
+                this.visual.appendChild(this.handles[x][y]!);
             }
         }
-
         // Create text labels at the center of each cell
         for (let x = 0; x < this.gridSize.x; x++) {
             this.texts.push(new Array<SVGTextElement>);
             for (let y = 0; y < this.gridSize.y; y++) {
-                const text = this.createText(x * this.cellSize.x + this.cellSize.x / 2, y * this.cellSize.y + this.cellSize.y / 2, this.cellValues[x][y]);
+                const text = this.createText(this.handles[x][y].cx.baseVal.value + this.cellSize.x / 2, this.handles[x][y].cx.baseVal.value + this.cellSize.y / 2, this.cellValues[x][y]);
                 this.texts[x].push(text);
             }
         }
     }
-    private createVertex(x: number, y: number, append: boolean = true): SVGCircleElement {
+    private createVertex(x: number, y: number, append = true): SVGCircleElement {
         const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         circle.setAttribute('cx', x.toString());
         circle.setAttribute('cy', y.toString());
@@ -123,7 +141,7 @@ export class GridMarker extends MarkerBase {
             line.setAttribute('stroke-dasharray', this.strokeDasharray);
             this.visual.appendChild(line);
         }
-        catch{}
+        catch{console.log("Line Error")}
         return line;
     }
     private onDragStart(circle: SVGCircleElement, event: MouseEvent): void {
@@ -150,15 +168,15 @@ export class GridMarker extends MarkerBase {
         // Find all lines where this circle is either the start or the end
         for (let x = 0; x < this.gridSize.x + 1; x++) {
             for (let y = 0; y < this.gridSize.y + 1; y++) {
-                if (circle == this.vertices[x][y])  {
+                if (circle == this.handles[x][y])  {
                     if (x > 0)
                     {
-                        let line = this.linesHorizontal[x - 1][y];
+                        const line = this.linesHorizontal[x - 1][y];
                         line.setAttribute('x2', newX.toString());
                         line.setAttribute('y2', newY.toString());
                     }
                     if (y > 0)  {
-                        let line = this.linesVertical[x][y - 1];
+                        const line = this.linesVertical[x][y - 1];
                         line.setAttribute('x2', newX.toString());
                         line.setAttribute('y2', newY.toString());
                     }
@@ -178,7 +196,7 @@ export class GridMarker extends MarkerBase {
         // Find all lines where this circle is either the start or the end
         for (let x = 0; x < this.gridSize.x + 1; x++) {
             for (let y = 0; y < this.gridSize.y + 1; y++) {
-                if (circle == this.vertices[x][y])  {
+                if (circle == this.handles[x][y])  {
                     this.updateSingleTextBox(x, y);
                     this.updateSingleTextBox(x - 1, y);
                     this.updateSingleTextBox(x, y - 1);
@@ -189,24 +207,24 @@ export class GridMarker extends MarkerBase {
     }
     private updateSingleTextBox(x: number, y: number)   {
         try {
-            let newPos: Vector2 = Vector2.Zero();
-            let text = this.texts[x][y];
+            const newPos: Vector2 = Vector2.Zero();
+            const text = this.texts[x][y];
             // Upper Left Vertex
-            newPos.x += Number(this.vertices[x][y].getAttribute('cx'));
-            newPos.y += Number(this.vertices[x][y].getAttribute('cy'));
+            newPos.x += Number(this.handles[x][y].getAttribute('cx'));
+            newPos.y += Number(this.handles[x][y].getAttribute('cy'));
             // Lower Left Vertex
-            newPos.x += Number(this.vertices[x][y + 1].getAttribute('cx'));
-            newPos.y += Number(this.vertices[x][y + 1].getAttribute('cy'));
+            newPos.x += Number(this.handles[x][y + 1].getAttribute('cx'));
+            newPos.y += Number(this.handles[x][y + 1].getAttribute('cy'));
             // Upper Right Vertex
-            newPos.x += Number(this.vertices[x + 1][y].getAttribute('cx'));
-            newPos.y += Number(this.vertices[x + 1][y].getAttribute('cy'));
+            newPos.x += Number(this.handles[x + 1][y].getAttribute('cx'));
+            newPos.y += Number(this.handles[x + 1][y].getAttribute('cy'));
             // Lower Right Vertex
-            newPos.x += Number(this.vertices[x + 1][y + 1].getAttribute('cx'));
-            newPos.y += Number(this.vertices[x + 1][y + 1].getAttribute('cy'));
+            newPos.x += Number(this.handles[x + 1][y + 1].getAttribute('cx'));
+            newPos.y += Number(this.handles[x + 1][y + 1].getAttribute('cy'));
             text.setAttribute('x', (newPos.x / 4).toString());
             text.setAttribute('y', (newPos.y / 4).toString());
         }
-        catch{}
+        catch{console.log("TextBox Error")}
     }
     private editText(event: MouseEvent, text: SVGTextElement): void {
         const textContent = text.textContent || '';

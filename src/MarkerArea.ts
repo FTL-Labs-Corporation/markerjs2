@@ -33,51 +33,14 @@ import {
   MarkerEvent,
 } from './core/Events';
 import {GridMarker} from "./markers/grid-marker/GridMarker";
-
-/**
- * @ignore
- */
+import {Vector2} from "@babylonjs/core";
 export type MarkerAreaMode = 'select' | 'create' | 'delete';
-
-/**
- * Identifier for marker type when setting {@linkcode availableMarkerTypes}.
- * Marker type can be set as either a string or a marker type reference.
- */
 export type MarkerTypeIdentifier = string | typeof MarkerBase;
-
-/**
- * Event handler type for {@linkcode MarkerArea} `render` event.
- */
 export type RenderEventHandler = (
   dataURL: string,
   state?: MarkerAreaState
 ) => void;
-/**
- * Event handler type for {@linkcode MarkerArea} `close` event.
- */
 export type CloseEventHandler = () => void;
-
-/**
- * MarkerArea is the main class of marker.js 2. It controls the behavior and appearance of the library.
- *
- * The simplest marker.js 2 usage scenario looks something like this:
- *
- * ```typescript
- * import * as markerjs2 from 'markerjs2';
- * // create an instance of MarkerArea and pass the target image reference as a parameter
- * let markerArea = new markerjs2.MarkerArea(document.getElementById('myimg'));
- *
- * // register an event listener for when user clicks OK/save in the marker.js UI
- * markerArea.addEventListener('render', event => {
- *   // we are setting the markup result to replace our original image on the page
- *   // but you can set a different image or upload it to your server
- *   document.getElementById('myimg').src = event.dataUrl;
- * });
- *
- * // finally, call the show() method and marker.js UI opens
- * markerArea.show();
- * ```
- */
 export class MarkerArea {
   private target: HTMLImageElement | HTMLElement;
   private targetObserver: ResizeObserver;
@@ -104,26 +67,8 @@ export class MarkerArea {
   private touchPoints = 0;
 
   private logoUI: HTMLElement;
-
-  /**
-   * `targetRoot` is used to set an alternative positioning root for the marker.js UI.
-   *
-   * This is useful in cases when your target image is positioned, say, inside a div with `position: relative;`
-   *
-   * ```typescript
-   * // set targetRoot to a specific div instead of document.body
-   * markerArea.targetRoot = document.getElementById('myRootElement');
-   * ```
-   *
-   * @default document.body
-   */
   public targetRoot: HTMLElement;
-
-  /**
-   * Returns a list of all built-in marker types for use with {@linkcode availableMarkerTypes}
-   *
-   * @readonly
-   */
+  public gridMarkers: Array<GridMarker> = new Array<GridMarker>();
   public get ALL_MARKER_TYPES(): typeof MarkerBase[] {
     return [
       FrameMarker,
@@ -141,13 +86,6 @@ export class MarkerArea {
       CaptionFrameMarker,
     ];
   }
-
-  /**
-   * Returns a list of default set of built-in marker types.
-   * Used when {@linkcode availableMarkerTypes} isn't set explicitly.
-   *
-   * @readonly
-   */
   public get DEFAULT_MARKER_TYPES(): typeof MarkerBase[] {
     return [
       FrameMarker,
@@ -159,12 +97,6 @@ export class MarkerArea {
       CalloutMarker,
     ];
   }
-
-  /**
-   * Returns a short list of essential built-in marker types for use with {@linkcode availableMarkerTypes}
-   *
-   * @readonly
-   */
   public get BASIC_MARKER_TYPES(): typeof MarkerBase[] {
     return [
       FrameMarker,
@@ -177,21 +109,9 @@ export class MarkerArea {
 
   private _availableMarkerTypes: typeof MarkerBase[] = this
     .DEFAULT_MARKER_TYPES;
-
-  /**
-   * Gets or sets a list of marker types avaiable to the user in the toolbar.
-   * The types can be passed as either type reference or a string type name.
-   *
-   * ```typescript
-   * this.markerArea1.availableMarkerTypes = ['CalloutMarker', ...this.markerArea1.BASIC_MARKER_TYPES];
-   * ```
-   *
-   * @default {@linkcode DEFAULT_MARKER_TYPES}
-   */
   public get availableMarkerTypes(): MarkerTypeIdentifier[] {
     return this._availableMarkerTypes;
   }
-
   public set availableMarkerTypes(value: MarkerTypeIdentifier[]) {
     this._availableMarkerTypes.splice(0);
     value.forEach((mt) => {
@@ -207,56 +127,29 @@ export class MarkerArea {
       }
     });
   }
-
   private toolbar: Toolbar;
   private toolbox: Toolbox;
-
   private mode: MarkerAreaMode = 'select';
-
   private _currentMarker?: MarkerBase;
-  /**
-   * Gets currently selected marker
-   *
-   * @readonly
-   * @since 2.27.0
-   */
   public get currentMarker() : MarkerBase | undefined {
     return this._currentMarker;
   }
   private markers: MarkerBase[] = [];
-
   private isDragging = false;
-
-  // for preserving orginal window state before opening the editor
   private bodyOverflowState: string;
   private scrollYState: number;
   private scrollXState: number;
-
   private renderEventListeners: RenderEventHandler[] = [];
   private closeEventListeners: CloseEventHandler[] = [];
-
   public settings: Settings = new Settings();
   public uiStyleSettings: IStyleSettings;
-
   private _isOpen = false;
-  /**
-   * Returns `true` when MarkerArea is open and `false` otherwise.
-   *
-   * @readonly
-   */
   public get isOpen(): boolean {
     return this._isOpen;
   }
-
   private undoRedoManager: UndoRedoManager<
     MarkerAreaState
   > = new UndoRedoManager<MarkerAreaState>();
-
-  /**
-   * Returns true if undo operation can be performed (undo stack is not empty).
-   * 
-   * @since 2.26.0
-   */
   public get isUndoPossible(): boolean {
     if (this.undoRedoManager && this.undoRedoManager.isUndoPossible) {
       return true;
@@ -264,12 +157,6 @@ export class MarkerArea {
       return false;
     }
   }
-
-  /**
-   * Returns true if redo operation can be performed (redo stack is not empty).
-   * 
-   * @since 2.26.0
-   */
    public get isRedoPossible(): boolean {
     if (this.undoRedoManager && this.undoRedoManager.isRedoPossible) {
       return true;
@@ -277,19 +164,7 @@ export class MarkerArea {
       return false;
     }
   }
-
-  /**
-   * When set to true resulting image will be rendered at the natural (original) resolution
-   * of the target image. Otherwise (default), screen dimensions of the image are used.
-   *
-   * @default false (use screen dimensions)
-   */
   public renderAtNaturalSize = false;
-  /**
-   * Type of image for the rendering result. Eg. `image/png` (default) or `image/jpeg`.
-   *
-   * @default `image/png`
-   */
   public renderImageType = 'image/png';
   /**
    * When rendering engine/format supports it (jpeg, for exmample),
@@ -308,7 +183,6 @@ export class MarkerArea {
    * @default false
    */
   public renderMarkersOnly = false;
-
   /**
    * When set and {@linkcode renderAtNaturalSize} is `false` sets the width of the rendered image.
    *
@@ -321,7 +195,6 @@ export class MarkerArea {
    * Both `renderWidth` and `renderHeight` have to be set for this to take effect.
    */
   public renderHeight?: number;
-
   /**
    * If a canvas is specified here, then marker.js will render the output to this canvas
    * in addition to generating an image.
@@ -329,7 +202,6 @@ export class MarkerArea {
    * @since 2.14.0
    */
   public renderTarget?: HTMLCanvasElement;
-
   /**
    * Pressing zoom button iterates through values in this array.
    *
@@ -366,18 +238,15 @@ export class MarkerArea {
       });
     }
   }
-
   private static instanceCounter = 0;
   private _instanceNo: number;
   public get instanceNo(): number {
     return this._instanceNo;
   }
-
   /**
    * Manage style releated settings via the `styles` property.
    */
   public styles: StyleManager;
-
   /**
    * Creates a new MarkerArea for the specified target image.
    *
@@ -471,7 +340,6 @@ export class MarkerArea {
     this._isOpen = true;
     this._isFocused = true;
   }
-
   /**
    * Initializes the MarkerArea and opens the UI.
    */
@@ -491,7 +359,6 @@ export class MarkerArea {
       listener(new MarkerAreaEvent(this))
     );
   }
-
   /**
    * Renders the annotation result.
    *
@@ -523,7 +390,6 @@ export class MarkerArea {
       this.renderTarget
     );
   }
-
   /**
    * Closes the MarkerArea UI.
    */
@@ -561,7 +427,6 @@ export class MarkerArea {
       }
     }
   }
-
   /**
    * Adds one or more markers to the toolbar.
    *
@@ -570,7 +435,6 @@ export class MarkerArea {
   public addMarkersToToolbar(...markers: typeof MarkerBase[]): void {
     this._availableMarkerTypes.push(...markers);
   }
-
   /**
    * Add a `render` event listener which is called when user clicks on the OK/save button
    * in the toolbar.
@@ -597,7 +461,6 @@ export class MarkerArea {
       listener(event.dataUrl, event.state);
     });
   }
-
   /**
    * Remove a `render` event handler.
    *
@@ -613,7 +476,6 @@ export class MarkerArea {
     //   );
     // }
   }
-
   /**
    * Add a `close` event handler to perform actions in your code after the user
    * clicks on the close button (without saving).
@@ -627,7 +489,6 @@ export class MarkerArea {
       listener();
     });
   }
-
   /**
    * Remove a `close` event handler.
    *
@@ -643,7 +504,6 @@ export class MarkerArea {
     //   );
     // }
   }
-
   private setupResizeObserver() {
     if (this.settings.displayMode === 'inline') {
       if (window.ResizeObserver) {
@@ -662,7 +522,6 @@ export class MarkerArea {
       window.addEventListener('resize', this.setWindowHeight);
     }
   }
-
   private onPopupTargetResize() {
     const ratio = (1.0 * this.target.clientWidth) / this.target.clientHeight;
     const newWidth =
@@ -675,11 +534,9 @@ export class MarkerArea {
         : this.editorCanvas.clientWidth / ratio;
     this.resize(newWidth, newHeight);
   }
-
   private setWindowHeight() {
     this.windowHeight = window.innerHeight;
   }
-
   private _isResizing = false;
   private resize(newWidth: number, newHeight: number) {
     this._isResizing = true;
@@ -730,7 +587,6 @@ export class MarkerArea {
 
     this._isResizing = false;
   }
-
   private scaleMarkers(scaleX: number, scaleY: number) {
     let preScaleSelectedMarker: MarkerBase;
     if (!(this._currentMarker && this._currentMarker instanceof TextMarker)) {
@@ -749,7 +605,6 @@ export class MarkerArea {
       this.setCurrentMarker(preScaleSelectedMarker);
     }
   }
-
   private setEditingTarget() {
     this.imageWidth = Math.round(this.target.clientWidth);
     this.imageHeight = Math.round(this.target.clientHeight);
@@ -764,14 +619,12 @@ export class MarkerArea {
     this.editingTarget.style.width = `${this.imageWidth}px`;
     this.editingTarget.style.height = `${this.imageHeight}px`;
   }
-
   private setTopLeft() {
     const targetRect = this.editingTarget.getBoundingClientRect();
     const bodyRect = this.editorCanvas.getBoundingClientRect();
     this.left = targetRect.left - bodyRect.left;
     this.top = targetRect.top - bodyRect.top;
   }
-
   private initMarkerCanvas(): void {
     this.markerImageHolder = document.createElement('div');
     this.markerImageHolder.style.setProperty('touch-action', 'pinch-zoom');
@@ -799,7 +652,6 @@ export class MarkerArea {
 
     this.editorCanvas.appendChild(this.markerImageHolder);
   }
-
   /**
    * Adds "defs" element to the marker SVG element.
    * Useful for using custom fonts and potentially other scenarios.
@@ -813,13 +665,11 @@ export class MarkerArea {
 
     this.defs.append(...nodes);
   }
-
   private addDefsToImage() {
     if (this.defs) {
       this.markerImage.insertBefore(this.defs, this.markerImage.firstChild);
     }
   }
-
   private initOverlay(): void {
     this.overlayContainer = document.createElement('div');
     this.overlayContainer.style.position = 'absolute';
@@ -830,12 +680,10 @@ export class MarkerArea {
     this.overlayContainer.style.display = 'flex';
     this.markerImageHolder.appendChild(this.overlayContainer);
   }
-
   private positionMarkerImage() {
     this.markerImageHolder.style.top = this.top / this.zoomLevel + 'px';
     this.markerImageHolder.style.left = this.left / this.zoomLevel + 'px';
   }
-
   private attachEvents() {
     this.markerImage.addEventListener('pointerdown', this.onPointerDown);
     // workaround to prevent a bug with Apple Pencil
@@ -845,7 +693,6 @@ export class MarkerArea {
     this.markerImage.addEventListener('dblclick', this.onDblClick);
     this.attachWindowEvents();
   }
-
   private attachWindowEvents() {
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
@@ -855,13 +702,11 @@ export class MarkerArea {
     window.addEventListener('resize', this.onWindowResize);
     window.addEventListener('keyup', this.onKeyUp);
   }
-
   private detachEvents() {
     this.markerImage.removeEventListener('pointerdown', this.onPointerDown);
     this.markerImage.removeEventListener('dblclick', this.onDblClick);
     this.detachWindowEvents();
   }
-
   private detachWindowEvents() {
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);
@@ -871,7 +716,6 @@ export class MarkerArea {
     window.removeEventListener('resize', this.onWindowResize);
     window.removeEventListener('keyup', this.onKeyUp);
   }
-
   /**
    * NOTE:
    *
@@ -908,7 +752,6 @@ export class MarkerArea {
     this.logoUI.style.pointerEvents = 'all';
     this.positionLogo();
   }
-
   private positionLogo() {
     if (this.logoUI) {
       if (this.uiStyleSettings.logoPosition !== 'right') {
@@ -929,7 +772,6 @@ export class MarkerArea {
       }px`;
     }
   }
-
   private overrideOverflow() {
     // backup current state of scrolling and overflow
     this.scrollXState = window.scrollX;
@@ -944,7 +786,6 @@ export class MarkerArea {
     document.body.style.overflow = this.bodyOverflowState;
     window.scroll({ top: this.scrollYState, left: this.scrollXState });
   }
-
   private showUI(): void {
     if (this.settings.displayMode === 'popup') {
       this.overrideOverflow();
@@ -1090,7 +931,6 @@ export class MarkerArea {
         : 'visible'
     );
   }
-
   private closeUI() {
     if (this.settings.displayMode === 'popup') {
       this.restoreOverflow();
@@ -1100,15 +940,17 @@ export class MarkerArea {
     this.coverDiv.remove();
     this.coverDiv = null;
   }
-
   private removeMarker(marker: MarkerBase) {
+    if (marker as GridMarker !== null && this.gridMarkers.includes(marker as GridMarker))  {
+      const i = this.gridMarkers.indexOf(marker as GridMarker);
+      this.gridMarkers.splice(i, 1);
+    }
     this.markerImage.removeChild(marker.container);
     if (this.markers.indexOf(marker) > -1) {
       this.markers.splice(this.markers.indexOf(marker), 1);
     }
     marker.dispose();
   }
-
   public switchToSelectMode(): void {
     this.mode = 'select';
     this.hideNotesEditor();
@@ -1123,7 +965,6 @@ export class MarkerArea {
       this.addUndoStep();
     }
   }
-
   private toolbarButtonClicked(
     buttonType: ToolbarButtonType,
     value?: typeof MarkerBase | string
@@ -1185,10 +1026,6 @@ export class MarkerArea {
       }
     }
   }
-
-  /**
-   * Removes currently selected marker.
-   */
   public deleteSelectedMarker(): void {
     if (this._currentMarker !== undefined) {
       let cancel = false;
@@ -1214,12 +1051,6 @@ export class MarkerArea {
       }
     }
   }
-
-  /**
-   * Removes all markers.
-   *
-   * @since 2.15.0
-   */
   public clear(): void {
     let cancel = false;
     if (this.markers.length > 0) {
@@ -1246,12 +1077,10 @@ export class MarkerArea {
       }
     }
   }
-
   private notesArea?: HTMLTextAreaElement;
   private get isNotesAreaOpen(): boolean {
     return this.notesArea !== undefined;
   }
-
   private showNotesEditor() {
     if (this._currentMarker !== undefined) {
       this.overlayContainer.innerHTML = '';
@@ -1277,7 +1106,6 @@ export class MarkerArea {
       this.notesArea = undefined;
     }
   }
-
   private selectLastMarker() {
     if (this.markers.length > 0) {
       this.setCurrentMarker(this.markers[this.markers.length - 1]);
@@ -1285,7 +1113,6 @@ export class MarkerArea {
       this.setCurrentMarker();
     }
   }
-
   private addUndoStep() {
     if (
       this._currentMarker === undefined ||
@@ -1316,18 +1143,11 @@ export class MarkerArea {
       }
     }
   }
-
-  /**
-   * Undo last action.
-   *
-   * @since 2.6.0
-   */
   public undo(): void {
     this.switchToSelectMode();
     this.addUndoStep();
     this.undoStep();
   }
-
   private undoStep(): void {
     const stepData = this.undoRedoManager.undo();
     if (stepData !== undefined) {
@@ -1339,17 +1159,10 @@ export class MarkerArea {
       );
     }
   }
-
-  /**
-   * Redo previously undone action.
-   *
-   * @since 2.6.0
-   */
   public redo(): void {
     this.switchToSelectMode();
     this.redoStep();
   }
-
   private redoStep(): void {
     const stepData = this.undoRedoManager.redo();
     if (stepData !== undefined) {
@@ -1361,13 +1174,6 @@ export class MarkerArea {
       );
     }
   }
-
-  /**
-   * Iterate zoom steps (@linkcode zoomSteps).
-   * Next zoom level is selected or returns to the first zoom level restarting the sequence.
-   *
-   * @since 2.12.0
-   */
   public stepZoom(): void {
     const zoomStepIndex = this.zoomSteps.indexOf(this.zoomLevel);
     this.zoomLevel =
@@ -1375,7 +1181,6 @@ export class MarkerArea {
         ? this.zoomSteps[zoomStepIndex + 1]
         : this.zoomSteps[0];
   }
-
   private prevPanPoint: IPoint = { x: 0, y: 0 };
   private panTo(point: IPoint) {
     this.contentDiv.scrollBy({
@@ -1384,12 +1189,6 @@ export class MarkerArea {
     });
     this.prevPanPoint = point;
   }
-
-  /**
-   * Initiates markup rendering.
-   *
-   * Get results by adding a render event listener via {@linkcode addRenderEventListener}.
-   */
   public async startRenderAndClose(): Promise<void> {
     const result = await this.render();
     const state = this.getState();
@@ -1399,13 +1198,6 @@ export class MarkerArea {
     );
     this.close(true);
   }
-
-  /**
-   * Returns the complete state for the MarkerArea that can be preserved and used
-   * to continue annotation next time.
-   *
-   * @param deselectCurrentMarker - when `true` is passed, currently selected marker will be deselected before getting the state.
-   */
   public getState(deselectCurrentMarker?: boolean): MarkerAreaState {
     if (deselectCurrentMarker === true) {
       this.setCurrentMarker();
@@ -1418,21 +1210,6 @@ export class MarkerArea {
     this.markers.forEach((marker) => result.markers.push(marker.getState()));
     return result;
   }
-
-  /**
-   * Restores MarkerArea state to continue previous annotation session.
-   *
-   * **IMPORTANT**: call `restoreState()` __after__ you've opened the MarkerArea with {@linkcode show}.
-   *
-   * ```typescript
-   * this.markerArea1.show();
-   * if (this.currentState) {
-   *   this.markerArea1.restoreState(this.currentState);
-   * }
-   * ```
-   *
-   * @param state - previously saved state object.
-   */
   public restoreState(state: MarkerAreaState): void {
     this.markers.splice(0);
     while (this.markerImage.lastChild) {
@@ -1464,28 +1241,12 @@ export class MarkerArea {
       listener(new MarkerAreaEvent(this))
     );
   }
-
   private addNewMarker(markerType: typeof MarkerBase): MarkerBase {
     const g = SvgHelper.createGroup();
     this.markerImage.appendChild(g);
 
     return new markerType(g, this.overlayContainer, this.settings);
   }
-
-  /**
-   * Initiate new marker creation.
-   *
-   * marker.js switches to marker creation mode for the marker type specified
-   * and users can draw a new marker like they would by pressing a corresponding
-   * toolbar button.
-   *
-   * This example initiates creation of a `FrameMarker`:
-   * ```typescript
-   * this.markerArea1.createNewMarker(FrameMarker);
-   * ```
-   *
-   * @param markerType
-   */
   public createNewMarker(markerType: typeof MarkerBase | string): void {
     let mType: typeof MarkerBase;
 
@@ -1510,14 +1271,12 @@ export class MarkerArea {
       );
     }
   }
-
   private addMarkerEvents(marker: MarkerBase) {
     marker.onMarkerCreated = this.markerCreated;
     marker.onColorChanged = this.colorChanged;
     marker.onFillColorChanged = this.fillColorChanged;
     marker.onStateChanged = this.markerStateChanged;
   }
-
   private markerCreated(marker: MarkerBase) {
     this.mode = 'select';
     this.markerImage.style.cursor = 'default';
@@ -1536,7 +1295,6 @@ export class MarkerArea {
       listener(new MarkerEvent(this, marker))
     );
   }
-
   private colorChanged(color: string): void {
     if (this.settings.defaultColorsFollowCurrentColors) {
       this.settings.defaultColor = color;
@@ -1548,18 +1306,11 @@ export class MarkerArea {
       this.settings.defaultFillColor = color;
     }
   }
-
   private markerStateChanged(marker: MarkerBase): void {
     this.eventListeners['markerchange'].forEach((listener) =>
       listener(new MarkerEvent(this, marker))
     );
   }
-
-  /**
-   * Sets the currently selected marker or deselects it if no parameter passed.
-   *
-   * @param marker marker to select. Deselects current marker if undefined.
-   */
   public setCurrentMarker(marker?: MarkerBase): void {
     if (this._currentMarker !== marker) {
       // no need to deselect if not changed
@@ -1590,7 +1341,6 @@ export class MarkerArea {
       }
     }
   }
-
   private onPointerDown(ev: PointerEvent) {
     if (!this._isFocused) {
       this.focus();
@@ -1624,7 +1374,6 @@ export class MarkerArea {
       }
     }
   }
-
   private onDblClick(ev: PointerEvent) {
     if (!this._isFocused) {
       this.focus();
@@ -1645,7 +1394,6 @@ export class MarkerArea {
       }
     }
   }
-
   private onPointerMove(ev: PointerEvent) {
     if (this.touchPoints === 1 || ev.pointerType !== 'touch') {
       if (this._currentMarker !== undefined || this.isDragging) {
@@ -1681,13 +1429,11 @@ export class MarkerArea {
     this.isDragging = false;
     this.addUndoStep();
   }
-
   private onPointerOut(/*ev: PointerEvent*/) {
     if (this.touchPoints > 0) {
       this.touchPoints--;
     }
   }
-
   private onKeyUp(ev: KeyboardEvent) {
     if (
       this._currentMarker !== undefined &&
@@ -1700,7 +1446,6 @@ export class MarkerArea {
       // this.addUndoStep();
     }
   }
-
   private clientToLocalCoordinates(x: number, y: number): IPoint {
     const clientRect = this.markerImage.getBoundingClientRect();
     const scaleX = clientRect.width / this.imageWidth / this.zoomLevel;
@@ -1710,11 +1455,9 @@ export class MarkerArea {
       y: (y - clientRect.top) / this.zoomLevel / scaleY,
     };
   }
-
   private onWindowResize() {
     this.positionUI();
   }
-
   private positionUI() {
     this.setTopLeft();
     switch (this.settings.displayMode) {
@@ -1744,42 +1487,17 @@ export class MarkerArea {
     this.positionMarkerImage();
     this.positionLogo();
   }
-
-  /**
-   * Add license key.
-   *
-   * This is a proxy method for {@linkcode Activator.addKey()}.
-   *
-   * @param key - commercial license key.
-   */
   public addLicenseKey(key: string): void {
     Activator.addKey(key);
   }
 
   private eventListeners = new EventListenerRepository();
-  /**
-   * Adds an event listener for one of the marker.js Live events.
-   *
-   * @param eventType - type of the event.
-   * @param handler - function handling the event.
-   *
-   * @since 2.16.0
-   */
   public addEventListener<T extends keyof IEventListenerRepository>(
     eventType: T,
     handler: EventHandler<T>
   ): void {
     this.eventListeners.addEventListener(eventType, handler);
   }
-
-  /**
-   * Removes an event listener for one of the marker.js Live events.
-   *
-   * @param eventType - type of the event.
-   * @param handler - function currently handling the event.
-   *
-   * @since 2.16.0
-   */
   public removeEventListener<T extends keyof IEventListenerRepository>(
     eventType: T,
     handler: EventHandler<T>
@@ -1788,16 +1506,6 @@ export class MarkerArea {
   }
 
   private _silentRenderMode = false;
-  /**
-   * Renders previously saved state without user intervention.
-   *
-   * The rendered image is returned to the `render` event handlers (as in the regular interactive process).
-   * Rendering options set on `MarkerArea` are respected.
-   *
-   * @param state state to render
-   *
-   * @since 2.17.0
-   */
   public renderState(state: MarkerAreaState): void {
     this._silentRenderMode = true;
     this.settings.displayMode = 'inline';
@@ -1808,26 +1516,11 @@ export class MarkerArea {
     this.startRenderAndClose();
     this._silentRenderMode = false;
   }
-
   private _isFocused = false;
-  /**
-   * Returns true when this MarkerArea is focused.
-   *
-   * @since 2.19.0
-   */
   public get isFocused(): boolean {
     return this._isFocused;
   }
-
   private _previousCurrentMarker?: MarkerBase;
-
-  /**
-   * Focuses the MarkerArea to receive all input from the window.
-   *
-   * Is called automatically when user clicks inside of the marker area. Call manually to set focus explicitly.
-   *
-   * @since 2.19.0
-   */
   public focus(): void {
     if (!this._isFocused) {
       this.attachWindowEvents();
@@ -1840,14 +1533,6 @@ export class MarkerArea {
       );
     }
   }
-
-  /**
-   * Tells MarkerArea to stop reacting to input outside of the immediate marker image.
-   *
-   * Call `focus()` to re-enable.
-   *
-   * @since 2.19.0
-   */
   public blur(): void {
     if (this._isFocused) {
       this.detachWindowEvents();
@@ -1860,24 +1545,27 @@ export class MarkerArea {
     }
   }
 
-    public getOverlayContainer(): HTMLDivElement  {
+
+
+  public getOverlayContainer(): HTMLDivElement  {
       return this.overlayContainer;
   }
   public getSettings(): Settings  {
       return this.settings;
   }
-  public createNewGrid(uuid: string, cellValues: Array<Array<string>>): void {
-      this.setCurrentMarker();
-      this.addUndoStep();
-      const g = SvgHelper.createGroup();
-      this.markerImage.appendChild(g);
-      new GridMarker(g, this.overlayContainer, this.settings, uuid, cellValues);
-      this.addMarkerEvents(this._currentMarker);
-      this.markerImage.style.cursor = 'crosshair';
-      //this.toolbar.setActiveMarkerButton(GridMarker6.typeName);
-      this.toolbox.setPanelButtons(this._currentMarker.toolboxPanels);
-      this.eventListeners['markercreating'].forEach((listener) =>
+  public createNewGrid(uuid: string, cellValues: Array<Array<string>>, vertices: Array<Array<Vector2>> | null): void {
+    this.setCurrentMarker();
+    this.addUndoStep();
+    const g = SvgHelper.createGroup();
+    this.markerImage.appendChild(g);
+    const newMarker = new GridMarker(g, this.overlayContainer, this.settings, uuid, cellValues, vertices);
+    this.addMarkerEvents(this._currentMarker);
+    this.markerImage.style.cursor = 'crosshair';
+    //this.toolbar.setActiveMarkerButton(GridMarker6.typeName);
+    this.toolbox.setPanelButtons(this._currentMarker.toolboxPanels);
+    this.eventListeners['markercreating'].forEach((listener) =>
         listener(new MarkerEvent(this, this._currentMarker))
-      );
+    );
+    this.gridMarkers.push(newMarker);
   }
 }
