@@ -1,7 +1,6 @@
 import { SvgHelper } from './core/SvgHelper';
 import { Activator } from './core/Activator';
 import { Renderer } from './core/Renderer';
-
 import Logo from './assets/markerjs-logo-m.svg';
 import { MarkerBase } from './core/MarkerBase';
 import { Toolbar, ToolbarButtonType } from './ui/Toolbar';
@@ -33,6 +32,7 @@ import {
   MarkerAreaRenderEvent,
   MarkerEvent,
 } from './core/Events';
+import {GridMarker} from "./markers/grid-marker/GridMarker";
 
 /**
  * @ignore
@@ -1858,5 +1858,26 @@ export class MarkerArea {
         listener(new MarkerAreaEvent(this))
       );
     }
+  }
+
+    public getOverlayContainer(): HTMLDivElement  {
+      return this.overlayContainer;
+  }
+  public getSettings(): Settings  {
+      return this.settings;
+  }
+  public createNewGrid(uuid: string, cellValues: Array<Array<string>>): void {
+      this.setCurrentMarker();
+      this.addUndoStep();
+      const g = SvgHelper.createGroup();
+      this.markerImage.appendChild(g);
+      new GridMarker(g, this.overlayContainer, this.settings, uuid, cellValues);
+      this.addMarkerEvents(this._currentMarker);
+      this.markerImage.style.cursor = 'crosshair';
+      //this.toolbar.setActiveMarkerButton(GridMarker6.typeName);
+      this.toolbox.setPanelButtons(this._currentMarker.toolboxPanels);
+      this.eventListeners['markercreating'].forEach((listener) =>
+        listener(new MarkerEvent(this, this._currentMarker))
+      );
   }
 }
